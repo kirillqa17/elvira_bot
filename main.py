@@ -172,7 +172,7 @@ def send_training(chat_id):
     bot.send_message(chat_id, training_text, reply_markup=markup, parse_mode='HTML')
 
     # Через некоторое время спрашиваем, сделала ли комплекс
-    timer = threading.Timer(1, ask_if_done, args=[chat_id])  # Через 1 час
+    timer = threading.Timer(60*60, ask_if_done, args=[chat_id])  # Через 1 час
     timer.start()
 
 @bot.callback_query_handler(func=lambda call: call.data == "restart_test")
@@ -229,7 +229,7 @@ def handle_done_confirmation(message):
         parse_mode='MarkdownV2'
     )
 
-    threading.Timer(1, send_day_after_message, args=[message.chat.id]).start()
+    threading.Timer(60*60*24, send_day_after_message, args=[message.chat.id]).start()
 
 
 def send_day_after_message(chat_id):
@@ -264,7 +264,7 @@ def send_day_after_message(chat_id):
     bot.send_media_group(chat_id, media)
 
     # Через 15 минут отправляем второе сообщение
-    threading.Timer(1, send_follow_up_message, args=[chat_id]).start()
+    threading.Timer(15*60, send_follow_up_message, args=[chat_id]).start()
 
 
 def send_follow_up_message(chat_id):
@@ -304,7 +304,7 @@ def send_follow_up_message(chat_id):
 
     bot.send_message(chat_id, "👉🏻 Присоединяйся к клубу <b>«Elan beauty»</b> и почувствуй этот кайф на себе!", parse_mode='HTML', reply_markup=markup)
     # Через некоторое время отправляем последнее сообщение
-    threading.Timer(1, send_final_pitch, args=[chat_id]).start()
+    threading.Timer(3*60, send_final_pitch, args=[chat_id]).start()
 
 
 def send_final_pitch(chat_id):
