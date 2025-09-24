@@ -3,6 +3,11 @@ from telebot import types
 import os
 import threading
 from dotenv import load_dotenv
+import time
+import openpyxl 
+from openpyxl.utils import get_column_letter
+from database import * # Импортируем все, включая update_user_stage
+
 load_dotenv()
 
 TOKEN = str(os.getenv("BOT_TOKEN"))
@@ -12,22 +17,182 @@ bot = telebot.TeleBot(TOKEN)
 # Хранение ответов пользователя
 user_data = {}
 
+with open("admins.txt", "r") as f:
+    ADMINS = [int(line.strip()) for line in f if line.strip().isdigit()]
+
+init_db()
+
+# --- Админ-панель (без изменений в логике, кроме экспорта) ---
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    if message.from_user.id not in ADMINS:
+        return bot.send_message(message.chat.id, "⛔ У вас нет прав для входа в админ-панель")
+
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Реклама", callback_data="admin_ads"))
+    markup.add(types.InlineKeyboardButton("База данных", callback_data="admin_db"))
+    bot.send_message(message.chat.id, "⚙️ Админ-панель", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("admin"))
+def handle_admin_menu(call):
+    if call.from_user.id not in ADMINS:
+        return bot.answer_callback_query(call.id, "Нет доступа")
+
+    if call.data == "admin_main":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Реклама", callback_data="admin_ads"))
+        markup.add(types.InlineKeyboardButton("База данных (экспорт XLSX)", callback_data="admin_db"))
+        bot.edit_message_text("⚙️ Админ-панель", call.message.chat.id, call.message.message_id, reply_markup=markup)
+        bot.answer_callback_query(call.id)
+        return
+
+    if call.data == "admin_ads":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Сгенерировать маркер", callback_data="admin_gen_marker"))
+        markup.add(types.InlineKeyboardButton("Посмотреть все маркеры", callback_data="admin_view_markers"))
+        markup.add(types.InlineKeyboardButton("Назад", callback_data="admin_main"))
+        bot.edit_message_text("📢 Реклама:", call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+
+
+    elif call.data == "admin_db":
+        bot.answer_callback_query(call.id, "Запускаю экспорт...")
+        # Запускаем в отдельном потоке
+        threading.Thread(target=generate_and_send_excel, args=(call.message.chat.id,), daemon=True).start()
+
+
+    elif call.data == "admin_gen_marker":
+        msg = bot.send_message(call.message.chat.id, "Введите название для маркера:")
+        bot.register_next_step_handler(msg, process_marker_name)
+        bot.answer_callback_query(call.id)
+
+
+    elif call.data == "admin_view_markers":
+        markers = get_markers()
+        if not markers:
+            bot.send_message(call.message.chat.id, "Маркеров пока нет.")
+        else:
+            lines = ["📋 Список маркеров:"]
+            for mid, name, marker, created, users_total in markers:
+                lines.append(f"➡️ {name}  |  `{marker}`  |  {users_total} юзеров  |  {created}")
+            text = "\n".join(lines)
+            bot.send_message(call.message.chat.id, text, parse_mode='Markdown')
+        bot.answer_callback_query(call.id)
+
+
+def process_marker_name(message):
+    name = (message.text or "").strip()
+    if not name:
+        return bot.send_message(message.chat.id, "Название не может быть пустым. Повторите команду /admin → Реклама → Сгенерировать маркер")
+
+    try:
+        marker = create_marker(name)  # функция из database.py
+        bot_username = bot.get_me().username or "<bot>"
+        link = f"https://t.me/{bot_username}?start={marker}"
+
+        # клавиатура после создания маркера
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Посмотреть все маркеры", callback_data="admin_view_markers"))
+        markup.add(types.InlineKeyboardButton("Назад в меню", callback_data="admin_main"))
+
+        # Отправляем ПЛЕЙН-текст (без parse_mode), чтобы избежать ошибок парсинга
+        text = f"✅ Маркер создан!\n\nНазвание: {name}\nКод: {marker}\nСсылка: {link}"
+        bot.send_message(message.chat.id, text, reply_markup=markup)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка при создании маркера: {e}")
+
+
+def generate_and_send_excel(admin_chat_id):
+    """
+    Генерирует Excel-файл с двумя листами (Users и Markers) и отправляет администратору.
+    Работает в отдельном потоке.
+    """
+    timestamp = int(time.time())
+    xlsx_name = f"export_{timestamp}.xlsx"
+    try:
+        # get_all_users() теперь вернет и current_stage
+        users = get_all_users()
+        markers = get_markers()
+
+        # Создаём Excel
+        wb = openpyxl.Workbook()
+
+        # Лист Users
+        ws_users = wb.active
+        ws_users.title = "Users"
+        # Добавляем новый заголовок
+        headers_users = ['id', 'telegram_id', 'username', 'first_name', 'date_registered', 'ref_marker', 'current_stage']
+        ws_users.append(headers_users)
+        for row in users:
+            ws_users.append(row)
+
+        # Лист Markers
+        ws_markers = wb.create_sheet(title="Markers")
+        headers_markers = ['id', 'name', 'marker', 'created_at', 'users_total']
+        ws_markers.append(headers_markers)
+        for row in markers:
+            ws_markers.append(row)
+
+        # Автоширина колонок
+        for ws in [ws_users, ws_markers]:
+            for col in ws.columns:
+                max_length = 0
+                col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                ws.column_dimensions[col_letter].width = adjusted_width
+
+        # Сохраняем
+        wb.save(xlsx_name)
+
+        # Отправляем
+        with open(xlsx_name, 'rb') as xf:
+            bot.send_document(admin_chat_id, xf, caption="Экспорт базы данных (Users + Markers)")
+
+    except Exception as e:
+        try:
+            bot.send_message(admin_chat_id, f"Произошла ошибка при экспорте базы: {e}")
+        except Exception:
+            pass
+    finally:
+        if os.path.exists(xlsx_name):
+            try:
+                os.remove(xlsx_name)
+            except Exception:
+                pass
+
+# --- Основная логика бота с отслеживанием этапов ---
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    video_path = 'media/video.mp4'  # Локальный путь к видео
+    if message.chat.id in ADMINS:
+        bot.send_message(message.chat.id, f"""Приветвую, {message.from_user.first_name}! Вы - администратор.
+Для вызова меню управления отправьте /admin""")
 
+    marker = None
+    if message.text and message.text.startswith("/start "):
+        marker = message.text.split(" ", 1)[1].strip()
+    try:
+        # Функция add_or_update_user уже установит этап 'start' для новых пользователей
+        add_or_update_user(message.from_user, marker)
+    except Exception as e:
+        print("Ошибка при записи в БД:", e)
+
+    video_path = 'media/video.mp4'
     with open(video_path, 'rb') as video_note:
         bot.send_video_note(message.chat.id, video_note)
 
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add(types.KeyboardButton("Пройти тест ❤️"))
-
-    # Затем отправляем текстовое приветствие с именем
     name = message.from_user.first_name
     greeting_text = f"""Привет, {name}! 👋🏻 Очень рада видеть тебя здесь!
 
-Здесь всё по-настоящему просто, удобно и с заботой о тебе.
+Здесь всё по-настояшему просто, удобно и с заботой о тебе.
 
 <b>Я помогу тебе мягко и уверенно двигаться к твоим целям, какие бы они ни были</b>:
 🌸 снять отёки и вернуть ощущение лёгкости
@@ -36,239 +201,277 @@ def send_welcome(message):
 🌸 укрепить мышцы тазового дна
 🌸 подтянуть овал лица и убрать второй подбородок
 🌸 почувствовать больше энергии
+"""
+    photo_path = "media/intro.jpg"
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=message.chat.id,
+            photo=photo,
+            caption=greeting_text, parse_mode='HTML'
+        )
+    # Обновляем этап
+    update_user_stage(message.chat.id, "1_sent_welcome")
 
-<b>Давай определим, какая тренировка нужна твоему телу прямо сейчас?</b>"""
+    threading.Timer(1, choose_branch, args=[message.chat.id]).start()
 
-    bot.send_message(message.chat.id, greeting_text, reply_markup=markup, parse_mode='HTML')
+def choose_branch(chat_id):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Красивая осанка и здоровая спина", callback_data="branch_back"))
+    markup.add(types.InlineKeyboardButton("Тело без отеков", callback_data="branch_body"))
+    markup.add(types.InlineKeyboardButton("Молодое лицо и длинная шея", callback_data="branch_face"))
 
+    bot.send_message(chat_id, "<b>Давай определим, какая тренировка нужна твоему телу прямо сейчас?</b>", reply_markup=markup, parse_mode='HTML')
+    # Обновляем этап
+    update_user_stage(chat_id, "2_sent_branch_choice")
 
-@bot.message_handler(func=lambda message: message.text == "Пройти тест ❤️")
-def start_test(message):
-    # Приветствие с именем
-    ask_age(message.chat.id)
+@bot.callback_query_handler(func=lambda call: call.data.startswith("branch_"))
+def second_stage(call):
+    photo_path = 'media/elvira_photo.jpg'
+    branch = call.data.split('branch_')[1]
+    
+    # Обновляем этап
+    update_user_stage(call.message.chat.id, f"3_chose_branch_{branch}")
+    
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=photo,
+            caption="""<b>Давай сделаю тебе приятно 😏</b>
 
-def ask_age(chat_id):
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('До 30', '30-40', '40-50', '50+')
-    bot.send_message(chat_id, "1/4 Сколько тебе лет?", reply_markup=markup)
+Да-да, тебе не показалось))
 
+Хочу поделиться с тобой пользой и показать, как выглядеть моложе на 10-13 лет без косметологов и хирургов, потратив в день 10-15 минут 🚀
 
-@bot.message_handler(func=lambda message: message.text in ['До 30', '30-40', '40-50', '50+'])
-def handle_age(message):
-    user_data[message.chat.id] = {'age': message.text}
-    ask_motivation(message.chat.id)
+Для начала давай познакомимся! Меня зовут Эльвира Андриянова, и я эксперт по естественному омоложению, фейсфитнесу, похудению и тренер по осанке с 24х летним опытом!
+<i>Мой путь начался с диагноза “порок сердца”, операции, непонимания, как вернуть свое тело, здоровье, красоту 😅А сейчас мне 43 года, а выгляжу на 30; я полна сил и энергии; 2 года назад вышла замуж; не болею уже лет 10 и чувствую себя просто великолепно.</i>
 
+А еще я знаю секретные способы, как в 40+ выглядеть на 10-13 лет моложе, быть сексуальной, энергичной и с невероятной ЖЕНСКОЙ ЭНЕРГИЕЙ 😍
 
-def ask_motivation(chat_id):
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('Да, постоянно', 'Даже не начинаю, вечно что-то останавливает')
-    bot.send_message(chat_id,
-                     "2/4 Бывает ли у тебя такое, что ты обещаешь себе начать заниматься телом и внешним видом «с понедельника», но мотивации хватает ненадолго?",
-                     reply_markup=markup)
+<b>Так вот, к чему я?
+А к тому, что я знаю все про молодое и здоровое тело! Поэтому в праве делиться этими знаниями с тобой ❤️</b>
+""", parse_mode='HTML'
+        )
+    
+    threading.Timer(1, free_complex, args=[call, branch]).start()
 
+def free_complex(call, branch):
+    if branch == "back":
+        photo_path = 'media/free_complex_back.jpg'
+        text = """<b>Сделай шаг навстречу красивому и молодому телу</b>
 
-@bot.message_handler(
-    func=lambda message: message.text in ['Да, постоянно', 'Даже не начинаю, вечно что-то останавливает'])
-def handle_motivation(message):
-    user_data[message.chat.id]['motivation'] = message.text
-    ask_concern(message.chat.id)
+<b>Лови комплекс «Королевская осанка за 5 минут», сразу после которой ты почувствуешь:</b> 
+•легкость
+•осанка выпрямиться
+•больше свободы в движениях и прилив энергии
+•подтянутый животик за счет ровной спины
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
 
+    elif branch == "face":
+        photo_path = 'media/free_complex_face.jpg'
+        text = """<b>Сделай шаг навстречу красивому и молодому лицу без брылей и морщин</b>
 
-def ask_concern(chat_id):
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('Сутулость, некрасивая осанка и постоянно болит спина', 'Второй подбородок, брыли')
-    bot.send_message(chat_id, "3/4 Что тебя больше всего волнует?", reply_markup=markup)
+<b>Лови комплекс «Молодое и подтянутое лицо без брылей и морщин», сразу после которой ты почувствуешь:</b>
+•расслабление мышц лица, ты почувствуешь «свободу» лица в прямом смысле 
+•овал лица подтянется 
+•заметно уменьшатся морщины и брыли
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
 
+    elif branch == "body":
+        photo_path = 'media/free_complex_body.jpg'
+        text = """<b>Сделай шаг навстречу телу без отеков и лишней жидкости</b>
 
-@bot.message_handler(func=lambda message: message.text in ['Сутулость, некрасивая осанка и постоянно болит спина',
-                                                           'Второй подбородок, брыли'])
-def handle_concern(message):
-    user_data[message.chat.id]['concern'] = message.text
-    ask_time(message.chat.id)
-
-
-def ask_time(chat_id):
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('10-15 минут', '15-30 минут')
-    bot.send_message(chat_id, "4/4 Сколько у тебя есть в день времени на себя?", reply_markup=markup)
-
-
-@bot.message_handler(func=lambda message: message.text in ['10-15 минут', '15-30 минут'])
-def handle_time(message):
-    user_data[message.chat.id]['time'] = message.text
-
-    # Отправляем благодарность
-    thanks_text = """Спасибо, что поделилась.. Не поверишь, что я тоже далеко не всегда такой молодой и стройной:
-💫 с кучей энергии и легкостью в теле
-💫 совершенно без отёков и зажимов
-💫в подтянутом теле без выпирающего живота, со стройной талией
-💫 с подтянутым лицом без морщин и брылей
-
-И прийти к такому реально любой:
-— дело НЕ в возрасте или генетике,
-— не нужно сидеть на диетах, ограничивать себя и убиваться на тренировках
-
-<b>Я определилась, какая тренировка подойдет тебе, но сначала подпишись на канал https://t.me/elan_beauty </b> 👇🏻"""
+<b>Лови комплекс «-500 гр лишней жидкости сразу после тренировки», сразу после которой ты почувствуешь:</b>
+•легкость
+•уйдут -200-500 гр лишней жидкости
+•больше свободы в движениях и прилив энергии
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
 
     markup = types.InlineKeyboardMarkup()
-    btn_subscribe = types.InlineKeyboardButton(
-        text="Подписаться на канал",
-        url="https://t.me/elan_beauty"
-    )
-    btn_check = types.InlineKeyboardButton(
-        text="Проверить подписку",
-        callback_data="check_subscription"
-    )
-    markup.add(btn_subscribe, btn_check)
+    markup.add(types.InlineKeyboardButton("Смотреть на УouТube", url=yt_link))
+    markup.add(types.InlineKeyboardButton("Смотреть на Rutube", url=rt_link))
+    markup.add(types.InlineKeyboardButton("Смотреть на VK видео", url=vk_link))
 
-    bot.send_message(message.chat.id, thanks_text, reply_markup=markup, parse_mode='HTML')
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=photo,
+            caption= text,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    # Обновляем этап
+    update_user_stage(call.message.chat.id, "4_sent_first_complex")
+    threading.Timer(1, after_free_complex, args=[call, branch]).start()
 
+def after_free_complex(call, branch):
+    if branch == "back":
+        callback_data="sub_branch_back"
+    elif branch == "face":
+        callback_data="sub_branch_face"
+    elif branch == "body":
+        callback_data="sub_branch_body"
+        
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Выполнила", callback_data=callback_data))
+    markup.add(types.InlineKeyboardButton("Не выполнила", callback_data=callback_data))
+    bot.send_message(call.message.chat.id, f"{bot.get_chat(call.message.chat.id).first_name}, ты выполнила комлпекс?", reply_markup=markup)
+    # Обновляем этап
+    update_user_stage(call.message.chat.id, "5_asked_about_completion")
 
-@bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
+@bot.callback_query_handler(func=lambda call: call.data.startswith("sub_branch_"))
+def subscription_stage(call):
+    branch = call.data.split('sub_branch_')[1]
+    text = """<b>Чтобы я могла дать тебе максимум пользы, подпишись на мой тг канал</b>, здесь ты узнаешь все секреты как выглядеть на 10-13 лет моложе без косметологов и хирургов, стабильно будешь получать БЕСПЛАТНЫЕ комплексы для тела и лица, а также еженедельные ответы на вопросы конкретно по твоей ситуации 😌
+https://t.me/elan_beauty 
+"""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/elan_beauty"))
+    markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=f"check_subscription_{branch}"))
+    photo_path = "media/mem.jpg"
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=photo,
+            caption=text,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    # Обновляем этап
+    update_user_stage(call.message.chat.id, "6_sent_subscription_prompt")
+    threading.Timer(15, check_if_subed, args=[call, branch]).start()
+
+def check_if_subed(call, branch):
+    try:
+        chat_member = bot.get_chat_member(chat_id="@elan_beauty", user_id=call.from_user.id)
+        if not chat_member.status in ['member', 'administrator', 'creator']:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("Разбери меня", url="https://t.me/elan_beauty"))
+            bot.send_message(call.message.chat.id, "Ты подписалась? В канале лично разбираю конкретные запросы каждой БЕСПЛАТНО ☺️", reply_markup=markup)
+            # Обновляем этап
+            update_user_stage(call.message.chat.id, "7_sent_subscription_reminder")
+            threading.Timer(1, second_complex, args=[call, branch]).start()
+    except Exception as e:
+        print(f"Ошибка в check_if_subed (вероятно, пользователь заблокировал бота): {e}")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("check_subscription_"))
 def check_subscription_callback(call):
+    branch = call.data.split('check_subscription_')[1]
     try:
         chat_member = bot.get_chat_member(chat_id="@elan_beauty", user_id=call.from_user.id)
         if chat_member.status in ['member', 'administrator', 'creator']:
-            # Пользователь подписан
-            bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя тренировку...")
-            send_training(call.message.chat.id)
+            bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
+            # Обновляем этап
+            update_user_stage(call.message.chat.id, "8a_subscription_confirmed")
+            second_complex(call, branch)
         else:
-            # Пользователь не подписан
             bot.answer_callback_query(call.id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
+            # Обновляем этап
+            update_user_stage(call.message.chat.id, "8b_subscription_failed")
     except Exception as e:
         print(f"Ошибка проверки подписки: {e}")
         bot.answer_callback_query(call.id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
 
 
-def send_training(chat_id):
-    user = user_data.get(chat_id, {})
-    concern = user.get('concern', '')
+def second_complex(call, branch):
+    chat_id = call.message.chat.id
+    if branch == "back":
+        photo_path = 'media/second_complex_back.jpg'
+        text = f"""<b>{bot.get_chat(chat_id).first_name}, кажется мы не закончили….</b>
+
+Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс "Здоровая спина и подтянутый живот" ❤️
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
+
+    elif branch == "face":
+        photo_path = 'media/second_complex_face.jpg'
+        text = f"""<b>{bot.get_chat(chat_id).first_name}, кажется мы не закончили….</b>
+
+Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс "Длинная и изящная шея, как у Нефертити" ❤️
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
+
+    elif branch == "body":
+        photo_path = 'media/second_complex_body.jpg'
+        text = f"""<b>{bot.get_chat(chat_id).first_name}, кажется мы не закончили….</b>
+
+Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс "Лицо без отеков" ❤️
+"""
+        yt_link = "https://www.youtube.com/"
+        rt_link = "https://www.youtube.com/"
+        vk_link = "https://www.youtube.com/"
 
     markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Смотреть на УouТube", url=yt_link))
+    markup.add(types.InlineKeyboardButton("Смотреть на Rutube", url=rt_link))
+    markup.add(types.InlineKeyboardButton("Смотреть на VK видео", url=vk_link))
 
-    if concern == 'Сутулость, некрасивая осанка и постоянно болит спина':
-        training_text = """<b>Лови тренировку «здоровая спина», сразу после которой ты почувствуешь</b>: 
-•легкость
-•осанка выпрямиться
-•больше свободы в движениях и прилив энергии
-•через несколько дней регулярных тренировок — минус лишние сантиметры в талии и более подтянутый живот, королевская осанка 
-
-Всего 11 минут — и ты увидишь, как твое тело изменилось! Начнём? 🚀"""
-        button = types.InlineKeyboardButton(text="Смотреть на YouTube",
-                                            url="https://youtu.be/ev23H3TBDp0?si=GylBJr1rf-stdYmP")
-    else:
-        training_text = """<b>Лови тренировку «убираем гипертонус жевательной и височной мышцы», сразу после которой ты почувствуешь</b>: 
-•расслабление мышц лица, ты почувствуешь «свободу» лица в прямом смысле 
-•овал лица подтянется 
-•заметно уменьшаться морщины и брыли
-
-Всего 2 минуты — и ты увидишь, как твое лицо изменилось, овал подтянулся и вообще ты помолодела! Начнём? 🚀"""
-        button = types.InlineKeyboardButton(text="Смотреть на YouTube",
-                                            url="https://youtu.be/VeRg8-BpfOI?si=SLd0a-pqB5FEgWLl")
-
-    restart_button = types.InlineKeyboardButton(text="🔄 Перезапустить тест", callback_data="restart_test")
-    markup.add(restart_button)
-    markup.add(button)
-    bot.send_message(chat_id, training_text, reply_markup=markup, parse_mode='HTML')
-
-    # Через некоторое время спрашиваем, сделала ли комплекс
-    timer = threading.Timer(60*60, ask_if_done, args=[chat_id])  # Через 1 час
-    timer.start()
-
-@bot.callback_query_handler(func=lambda call: call.data == "restart_test")
-def restart_test(call):
-    bot.answer_callback_query(call.id, "Начинаем тест заново!")
-    ask_age(call.message.chat.id)
-
-def ask_if_done(chat_id):
-    name = bot.get_chat(chat_id).first_name
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    markup.add(types.KeyboardButton("Конечно! 😊"))
-    bot.send_message(chat_id, f"{name}, подскажи, сделала комплекс?", reply_markup=markup)
-
-
-@bot.message_handler(func=lambda message: message.text == "Конечно! 😊")
-def handle_done_confirmation(message):
-    follow_up_text = """Уже почувствовала изменения после тренировки\?
-
-Теперь представь, что за месяц работы на осанку и лицо ты сможешь выглядеть на 10 лет моложе\:
-
-🌸 убираешь отёки, а вместе с ними — тяжесть и лишние объёмы в ногах, талии и животе
-🌸 смотришь в зеркало и видишь, как плечи расправились как у модели или балерины
-🌸 ты больше не сутулишься, а походка стала лёгкой и женственной
-🌸 твое лицо стало подтянутым, морщинки исчезли и ты стала выглядеть моложе
-🌸 тебе делают комплименты и не верят, когда ты называешь свой возраст
-
-Это не сказка — это эффект системы, которая работает в клубе Elan beauty 
-
-🔥3 онлайн в неделю тренировки по 30 минут 
-🔥Занимайся LIVE с нами или в записи — когда удобно\:  
-\- Утром с кофе   
-\- В обеденный перерыв   
-\- Вечером вместо сериала  
-🔥 Ежедневная 7 минутная тренировка для шеи
-🔥 Тренировки по 15 минут в день для идеальной осанки
-🔥 2 раза в неделю пилатес на мяче 
-🔥 Дыхательные практики для расслабления плеч
-🔥 Уроки по тейпированию лица и тела, чтобы омолаживаться во сне
-
-📌 Доступ ВСЕГО за 2599 вместо ~5599~"""
-
-    # Убираем клавиатуру после нажатия
-    markup = types.InlineKeyboardMarkup()
-    btn_subscribe = types.InlineKeyboardButton(
-        text="Хочу больше!",
-        url="https://elviraelan.taplink.ws"
-    )
-    markup.add(btn_subscribe)
-
-    bot.send_message(
-        message.chat.id,
-        follow_up_text,
-        reply_markup=markup,  # инлайн-кнопка
-        parse_mode='MarkdownV2'
-    )
-
-    threading.Timer(60*60*24, send_day_after_message, args=[message.chat.id]).start()
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=chat_id,
+            photo=photo,
+            caption= text,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    # Обновляем этап
+    update_user_stage(chat_id, "9_sent_second_complex")
+    threading.Timer(1, send_day_after_message, args=[chat_id]).start()
 
 
 def send_day_after_message(chat_id):
-    name = bot.get_chat(chat_id).first_name
+    try:
+        name = bot.get_chat(chat_id).first_name
+    except Exception as e:
+        print(f"Не удалось получить чат {chat_id}: {e}")
+        return 
 
-    # Первое сообщение с фото и видео
-    success_story = f"""Ира 39 лет 
+    success_story = f"""{name}, нам нужно серьезно поговорить!
 
-Пришла в клуб:
-❌Лишний вес 
-❌Отечность
-❌Двойной подбородок 
-❌Боль в шее
-❌Целлюлит 
-❌Сутулость 
+От "нелюбви к себе" до "я вновь полюбила себя и почувствовала женщиной" 🔥
+Знакомьтесь, на фото - Ира, 39 лет
 
-После: 
-✅Убрали отеки 
-✅Лишний вес пошел вниз 
-✅Улучшилась осанка
-✅Ушла отечность лица 
-✅Раскрыла себя как женщина 
-✅Научилась нравится себе"""
+❌Ира пришла ко мне с: лишним весом, отечностью, двойным подбородком, болью в шее и спине, целлюлитом, сутулостью и ощущением, что уже ничего не изменить…
 
+✅ Спустя 4 недели: ушли отеки и лишние килограммы, улучшилась осанка и перестала болеть спина, ушла отечность с лица, научилась нравиться себе и раскрыла себя как женщину.
+
+Что помогло нам сделать такой результат:
+-10-15ти минутные тренировки в день ✅
+-Питание без диет и жестких запретов ✅
+-Танцы, которые приносят удовольствие ✅
+-Проработка сексуальности и женственности ✅
+
+И так может каждая, если выбрана верная система действий!
+"""
     media = [
-        types.InputMediaVideo('BAACAgIAAxkDAAOLaEmZ12Y-n6di3SZCnm_hM2yH4fgAAn5yAALgMVBK6JHVUCwaVD02BA',
+        types.InputMediaVideo(open('media/ira.mp4','rb'),
                               caption=success_story),
-        types.InputMediaPhoto('AgACAgIAAxkDAAONaEmaWvnG0QP0CmvucYALAy0leDsAAgT5MRun7FBKsX9XfNJoAAHeAQADAgADeQADNgQ')
+        types.InputMediaPhoto(open('media/ira_photo.jpg','rb'))
     ]
-
-    # Отправляем медиагруппу
     bot.send_media_group(chat_id, media)
-
-    # Через 15 минут отправляем второе сообщение
-    threading.Timer(15*60, send_follow_up_message, args=[chat_id]).start()
+    # Обновляем этап
+    update_user_stage(chat_id, "10_sent_ira_story")
+    threading.Timer(1, send_follow_up_message, args=[chat_id]).start()
 
 
 def send_follow_up_message(chat_id):
-    name = bot.get_chat(chat_id).first_name
+    try:
+        name = bot.get_chat(chat_id).first_name
+    except Exception as e:
+        print(f"Не удалось получить чат {chat_id}: {e}")
+        return 
 
     follow_up_text = f"""{name}, ты так помолодела и постройнела 🔥
 
@@ -284,59 +487,66 @@ def send_follow_up_message(chat_id):
 - делали 15-30 минутные комплексы и омолаживались даже ночью 
 
 🏆 Итог: ушли отеки, подтянулся живот, ушел второй подбородок, осанка стала КОРОЛЕВСКОЙ
-
-А ты готова к таким изменениям?"""
+Доказательства? (В фото выше 👆🏻)"""
 
     media = [
         types.InputMediaPhoto(open('media/results1.jpg', 'rb'), caption=follow_up_text),
-        types.InputMediaPhoto(open('media/results2.jpg', 'rb'))
+        types.InputMediaPhoto(open('media/results3.jpg', 'rb'))
     ]
-
-    # Отправляем медиагруппу
     bot.send_media_group(chat_id, media)
-
     markup = types.InlineKeyboardMarkup()
     btn_join = types.InlineKeyboardButton(
-        text="Присоединиться к клубу!",
-        url="https://elviraelan.taplink.ws"
+        text="❤️",
+        url="https://t.me/Elvira_ELAN"
     )
     markup.add(btn_join)
-
-    bot.send_message(chat_id, "👉🏻 Присоединяйся к клубу <b>«Elan beauty»</b> и почувствуй этот кайф на себе!", parse_mode='HTML', reply_markup=markup)
-    # Через некоторое время отправляем последнее сообщение
-    threading.Timer(3*60, send_final_pitch, args=[chat_id]).start()
+    bot.send_message(chat_id, "Ставь ❤️ если переживаешь, что не сможешь сделать тело мечты и помолодеть на 10-13 лет", parse_mode='HTML', reply_markup=markup)
+    # Обновляем этап
+    update_user_stage(chat_id, "11_sent_results_followup")
+    threading.Timer(1, send_final_pitch, args=[chat_id]).start()
 
 
 def send_final_pitch(chat_id):
-    name = bot.get_chat(chat_id).first_name
+    final_text = f"""❌ <b>Это вообще нормально? </b>
 
-    final_text = f"""{name}, ты когда-нибудь задумывалась, куда уходят твои деньги?
+Я и мои клиентки выглядим на 13 лет моложе без косметологов и хирургов, без потраченных 100.000+ на все эти инъекции и процедуры!
 
-<b><i>Каждый поход в магазин — 1500–3000 рублей на продукты, которые...</i></b>
+<b>Знакомый ужас?</b>
+➡️ Вложила в свое лицо и тело больше 100k — а результата ноль.
+➡️ Делаешь маски и мажешься кремами, а морщины и отечность на месте.
+➡️ Уже ненавидишь себя и свое отражение в зеркале.
+➡️ Мечтаешь проснуться одним днем моложе на 10-13 лет.
 
-🍟 добавляют лишние сантиметры и кг
-🍟 создают ощущение тяжести
-🍟 отражаются на твоем лице не в лучшую сторону
+А тем временем, косметологи и хирурги рассказывают, сколько нужно сделать различных “безопасных” процедур и операций, чтобы выглядеть хорошо.
 
-<b>А теперь сравни: 2599₽ — столько же и больше ты тратишь на еду за неделю.</b> Так ведь?
+<u>Я тоже верила в этот бред. Пока не включила голову и не нашла способ, который работает в миллион раз лучше и дешевле.</u>
 
-<b>А за эту же сумму ты получаешь:</b>
-💪🏻 Тренировки для осанки, подтянутого овала лица, стройного тела и САМОЕ ГЛАВНОЕ - молодости
-🤗 Уроки тейпированию
-🔥 Советы по питанию
+И сейчас я и мои девочки, которые еще вчера паниковали из-за своего возраста, просто смеются над тем, что когда-то сомневались):
 
-2599₽ — это вклад в стройное тело и самочувствие
+<b>Это не про «просто повезло» — это система. Это про то, что:</b>
+👍 Не нужно ходить к косметологам и отдавать последние деньги 
+👍 Не нужно класть свое тело и лицо под нож
+👍 Не нужно убиваться в спортзале каждый день
 
-👉🏻 <b>Разве это не самая выгодная инвестиция в себя и свое тело?</b>"""
+Звучит как сказка? Но нет, это реальность 🔥
+Готова раскрыть систему и показать, как стать молодой, красивой и здоровой даже после 40 ↴
 
+<b>Ставь «+», и я проведу для тебя БЕСПЛАТНУЮ консультацию, на которой разберу конкретно твою ситуацию и дам четкие шаги, как сделать тело и лицо мечты даже после 40 (другие продают это дорого, а я делаю бесплатно)</b>
+"""
+    media = [
+        types.InputMediaPhoto(open('media/final1.jpg', 'rb')),
+        types.InputMediaPhoto(open('media/final2.jpg', 'rb')),
+        types.InputMediaPhoto(open('media/final3.jpg', 'rb'))     
+    ] 
+    bot.send_media_group(chat_id, media)
     markup = types.InlineKeyboardMarkup()
     btn_join = types.InlineKeyboardButton(
-        text="Убедила, иду!",
-        url="https://elviraelan.taplink.ws"
+        text="+",
+        url="https://t.me/Elvira_ELAN"
     )
     markup.add(btn_join)
-
     bot.send_message(chat_id, final_text, reply_markup=markup, parse_mode='HTML')
+    update_user_stage(chat_id, "12_sent_final_pitch")
 
 if __name__ == '__main__':
     bot.polling(none_stop=True)
