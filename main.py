@@ -466,7 +466,7 @@ def send_day_after_message(chat_id):
     # Обновляем этап
     update_user_stage(chat_id, "10_sent_ira_story")
     threading.Timer(1, send_follow_up_message, args=[chat_id]).start()
-    bot.send_message(chat_id, success_story, parse_mode='HTML', reply_markup=markup)
+    bot.send_message(chat_id, success_story, parse_mode='HTML')
 
 def send_follow_up_message(chat_id):
     try:
