@@ -212,7 +212,7 @@ def send_welcome(message):
     # Обновляем этап
     update_user_stage(message.chat.id, "1_sent_welcome")
 
-    threading.Timer(1, choose_branch, args=[message.chat.id]).start()
+    threading.Timer(10, choose_branch, args=[message.chat.id]).start()
 
 def choose_branch(chat_id):
     markup = types.InlineKeyboardMarkup()
@@ -252,7 +252,7 @@ def second_stage(call):
 """, parse_mode='HTML'
         )
     
-    threading.Timer(1, free_complex, args=[call, branch]).start()
+    threading.Timer(30, free_complex, args=[call, branch]).start()
 
 def free_complex(call, branch):
     if branch == "back":
@@ -266,9 +266,9 @@ def free_complex(call, branch):
 •больше свободы в движениях и прилив энергии
 •подтянутый животик за счет ровной спины
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/JrohbzoOdpY"
+        rt_link = "https://rutube.ru/video/private/b948ba4a8703db58f51cb47535de30c9/?p=bptaDMpy5tyuYJvxwPuqVw"
+        vk_link = "https://vk.com/video-225608115_456239138?list=ln-JvKo7HzWLiZLH29jHz"
 
     elif branch == "face":
         photo_path = 'media/free_complex_face.jpg'
@@ -277,12 +277,12 @@ def free_complex(call, branch):
 
 <b>Лови комплекс «Молодое и подтянутое лицо без брылей и морщин», сразу после которой ты почувствуешь:</b>
 •расслабление мышц лица, ты почувствуешь «свободу» лица в прямом смысле 
-•овал лица подтянется 
+•овал лица подтянется
 •заметно уменьшатся морщины и брыли
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/OreFR3YkOUM"
+        rt_link = "https://rutube.ru/video/private/54d25449d8e9d87030df379e7814b2ee/?p=ouOBiOVJGbIDGNJ9JUlRfw"
+        vk_link = "https://vk.com/video-225608115_456239137?list=ln-huwCY17lBjqCa7e8ex"
 
     elif branch == "body":
         photo_path = 'media/free_complex_body.jpg'
@@ -294,9 +294,9 @@ def free_complex(call, branch):
 •уйдут -200-500 гр лишней жидкости
 •больше свободы в движениях и прилив энергии
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/ItvDCRLp2iY"
+        rt_link = "https://rutube.ru/video/private/a1120e480795632baed7c61121e0fda5/?p=DRXjSaCEkAveI7JHiX1XSw"
+        vk_link = "https://vk.com/video-225608115_456239141?list=ln-WvrIAeAAqXHNdU6L1j"
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Смотреть на УouТube", url=yt_link))
@@ -313,7 +313,7 @@ def free_complex(call, branch):
         )
     # Обновляем этап
     update_user_stage(call.message.chat.id, "4_sent_first_complex")
-    threading.Timer(1, after_free_complex, args=[call, branch]).start()
+    threading.Timer(300, after_free_complex, args=[call, branch]).start()
 
 def after_free_complex(call, branch):
     if branch == "back":
@@ -350,7 +350,7 @@ https://t.me/elan_beauty
         )
     # Обновляем этап
     update_user_stage(call.message.chat.id, "6_sent_subscription_prompt")
-    threading.Timer(15, check_if_subed, args=[call, branch]).start()
+    threading.Timer(86400, check_if_subed, args=[call, branch]).start()
 
 def check_if_subed(call, branch):
     try:
@@ -361,7 +361,7 @@ def check_if_subed(call, branch):
             bot.send_message(call.message.chat.id, "Ты подписалась? В канале лично разбираю конкретные запросы каждой БЕСПЛАТНО ☺️", reply_markup=markup)
             # Обновляем этап
             update_user_stage(call.message.chat.id, "7_sent_subscription_reminder")
-            threading.Timer(1, second_complex, args=[call, branch]).start()
+            threading.Timer(86400, second_complex, args=[call, branch]).start()
     except Exception as e:
         print(f"Ошибка в check_if_subed (вероятно, пользователь заблокировал бота): {e}")
 
@@ -392,9 +392,9 @@ def second_complex(call, branch):
 
 Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс «Здоровая спина и подтянутый живот» ❤️
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/LNOJyXNlej0"
+        rt_link = "https://rutube.ru/video/private/d85f38329b99b6769ca0650bd045f258/?p=fGTXhZJ3D-pGHb7OUcphHg"
+        vk_link = "https://vk.com/video-225608115_456239139?list=ln-8XwK7zhbPR4PuZbU3E"
 
     elif branch == "face":
         photo_path = 'media/second_complex_face.jpg'
@@ -402,9 +402,9 @@ def second_complex(call, branch):
 
 Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс «Длинная и изящная шея, как у Нефертити» ❤️
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/Td53U_3TXY4"
+        rt_link = "https://rutube.ru/video/private/5aabdbe378eca9683a9bfcf8f0cbd236/?p=6jlgx41csue5-s5z4fl_VA"
+        vk_link = "https://vk.com/video-225608115_456239136?list=ln-MnMXCrWyKc4Trv2Qh0"
 
     elif branch == "body":
         photo_path = 'media/second_complex_body.jpg'
@@ -412,9 +412,9 @@ def second_complex(call, branch):
 
 Ты тоже так считаешь…? Тогда тебя ждет следующий бесплатный комплекс «Лицо без отеков» ❤️
 """
-        yt_link = "https://www.youtube.com/"
-        rt_link = "https://www.youtube.com/"
-        vk_link = "https://www.youtube.com/"
+        yt_link = "https://youtu.be/BTfh4rITS-A"
+        rt_link = "https://rutube.ru/video/private/eb97aaaf0c65704d843092c4c4d04e61/?p=V0nNuWhJnEq22boDgCGLqQ"
+        vk_link = "https://vk.com/video-225608115_456239140?list=ln-E87Sspq9OKLTXL9bK2"
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Смотреть на УouТube", url=yt_link))
@@ -431,7 +431,7 @@ def second_complex(call, branch):
         )
     # Обновляем этап
     update_user_stage(chat_id, "9_sent_second_complex")
-    threading.Timer(1, send_day_after_message, args=[chat_id]).start()
+    threading.Timer(86400, send_day_after_message, args=[chat_id]).start()
 
 
 def send_day_after_message(chat_id):
@@ -465,7 +465,7 @@ def send_day_after_message(chat_id):
     bot.send_media_group(chat_id, media)
     # Обновляем этап
     update_user_stage(chat_id, "10_sent_ira_story")
-    threading.Timer(1, send_follow_up_message, args=[chat_id]).start()
+    threading.Timer(86400, send_follow_up_message, args=[chat_id]).start()
     bot.send_message(chat_id, success_story, parse_mode='HTML')
 
 def send_follow_up_message(chat_id):
@@ -509,7 +509,7 @@ def send_follow_up_message(chat_id):
     bot.send_message(chat_id, follow_up_text, parse_mode='HTML', reply_markup=markup)
     # Обновляем этап
     update_user_stage(chat_id, "11_sent_results_followup")
-    threading.Timer(1, send_final_pitch, args=[chat_id]).start()
+    threading.Timer(86400, send_final_pitch, args=[chat_id]).start()
 
 
 def send_final_pitch(chat_id):
