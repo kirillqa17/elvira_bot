@@ -258,7 +258,7 @@ def second_stage(call):
 """, parse_mode='HTML'
         )
     
-    threading.Timer(30, free_complex, args=[call, branch]).start()
+    threading.Timer(30, before_free_complex, args=[call, branch]).start()
 
 def clean_check_sub(user_id, branch, timer = None):
     try:
