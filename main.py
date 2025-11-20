@@ -260,61 +260,58 @@ def second_stage(call):
     
     threading.Timer(30, before_free_complex, args=[call, branch]).start()
 
-def clean_check_sub(call, branch, timer = None):
+def clean_check_sub(chat_id, branch, timer = None):
     try:
-        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.message.chat.id)
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=chat_id)
         if chat_member.status in ['member', 'administrator', 'creator']:
-            bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
-            free_complex(call.message.chat.id, branch)
-            update_user_stage(call.message.chat.id, "3.5_sent_subscription_prompt")
+            free_complex(chat_id, branch)
+            update_user_stage(chat_id, "3.5_sent_subscription_prompt")
         else:
-            if get_user_stage(call.message.chat.id).startswith("3_chose_branch_") and timer==10800:
-                free_complex(call.message.chat.id, branch)
-            elif get_user_stage(call.message.chat.id).startswith("3_chose_branch_") and timer==900:
+            if get_user_stage(chat_id).startswith("3_chose_branch_") and timer==10800:
+                free_complex(chat_id, branch)
+            elif get_user_stage(chat_id).startswith("3_chose_branch_") and timer==900:
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
-                markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(call.message.chat.id, branch)))
-                username = get_username(call.message.chat.id)
-                bot.send_message(call.message.chat.id, f"{username}, не вижу твоей подписки, скорее подписывайся и смотри комплекс ❤️", reply_markup=markup)
-
-            bot.answer_callback_query(call.id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
+                markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=f"clean_check_sub_{branch}"))
+                username = get_username(chat_id)
+                bot.send_message(chat_id, f"{username}, не вижу твоей подписки, скорее подписывайся и смотри комплекс ❤️", reply_markup=markup)
 
     except Exception as e:
         print(f"Ошибка проверки подписки: {e}")
-        bot.answer_callback_query(call.id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
 
 
 
 def before_free_complex(call, branch):
     text = """<b>Тук-тук, бежала к тебе со всех ног, чтобы сообщить, что тебя уже ждёт первый комплекс </b>
 
-Но, прежде, подпишись на мой канал, чтобы мы обменялись взаимной энергией с тобой 😉 
+Но, прежде, подпишись на мой канал, чтобы мы обменялись взаимной энергией с тобой 😉
 
 <i>Сразу после подписки, тебе придет комплекс </i> 🫶🏻
 """
+    chat_id = call.message.chat.id
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
-    markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(call.message.chat.id, branch)))
+    markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=f"clean_check_sub_{branch}"))
     photo_path='media/running.jpg'
     with open(photo_path, 'rb') as photo:
         bot.send_photo(
-            chat_id=call.message.chat.id,
+            chat_id=chat_id,
             photo=photo,
             caption= text,
             parse_mode='HTML',
             reply_markup=markup
         )
-    threading.Timer(900, clean_check_sub, args=[call, branch, 900]).start()
-    threading.Timer(10800, clean_check_sub, args=[call, branch, 10800]).start()
+    threading.Timer(900, clean_check_sub, args=[chat_id, branch, 900]).start()
+    threading.Timer(10800, clean_check_sub, args=[chat_id, branch, 10800]).start()
 
 
-def free_complex(call, branch):
+def free_complex(chat_id, branch):
     if branch == "back":
         photo_path = 'media/free_complex_back.jpg'
         text = """<b>Сделай шаг навстречу...
 красивому и молодому телу</b>
 
-<b>Лови комплекс «Королевская осанка за 5 минут», сразу после которой ты почувствуешь:</b> 
+<b>Лови комплекс «Королевская осанка за 5 минут», сразу после которой ты почувствуешь:</b>
 •легкость
 •осанка выпрямиться
 •больше свободы в движениях и прилив энергии
@@ -330,7 +327,7 @@ def free_complex(call, branch):
 красивому и молодому лицу без брылей и морщин</b>
 
 <b>Лови комплекс «Молодое и подтянутое лицо без брылей и морщин», сразу после которой ты почувствуешь:</b>
-•расслабление мышц лица, ты почувствуешь «свободу» лица в прямом смысле 
+•расслабление мышц лица, ты почувствуешь «свободу» лица в прямом смысле
 •овал лица подтянется
 •заметно уменьшатся морщины и брыли
 """
@@ -359,30 +356,30 @@ def free_complex(call, branch):
 
     with open(photo_path, 'rb') as photo:
         bot.send_photo(
-            chat_id=call.message.chat.id,
+            chat_id=chat_id,
             photo=photo,
             caption= text,
             parse_mode='HTML',
             reply_markup=markup
         )
     # Обновляем этап
-    update_user_stage(call.message.chat.id, "4_sent_first_complex")
-    threading.Timer(300, after_free_complex, args=[call, branch]).start()
+    update_user_stage(chat_id, "4_sent_first_complex")
+    threading.Timer(300, after_free_complex, args=[chat_id, branch]).start()
 
-def after_free_complex(call, branch):
+def after_free_complex(chat_id, branch):
     if branch == "back":
         callback_data="sub_branch_back"
     elif branch == "face":
         callback_data="sub_branch_face"
     elif branch == "body":
         callback_data="sub_branch_body"
-        
+
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Выполнила", callback_data=callback_data))
     markup.add(types.InlineKeyboardButton("Не выполнила", callback_data=callback_data))
-    bot.send_message(call.message.chat.id, f"{bot.get_chat(call.message.chat.id).first_name}, ты выполнила комлпекс?", reply_markup=markup)
+    bot.send_message(chat_id, f"{bot.get_chat(chat_id).first_name}, ты выполнила комлпекс?", reply_markup=markup)
     # Обновляем этап
-    update_user_stage(call.message.chat.id, "5_asked_about_completion")
+    update_user_stage(chat_id, "5_asked_about_completion")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("sub_branch_"))
 def subscription_stage(call):
