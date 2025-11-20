@@ -381,6 +381,22 @@ def after_free_complex(chat_id, branch):
     # Обновляем этап
     update_user_stage(chat_id, "5_asked_about_completion")
 
+@bot.callback_query_handler(func=lambda call: call.data.startswith("clean_check_sub_"))
+def handle_clean_check_sub(call):
+    branch = call.data.split('clean_check_sub_')[1]
+    chat_id = call.message.chat.id
+    try:
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.from_user.id)
+        if chat_member.status in ['member', 'administrator', 'creator']:
+            bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
+            free_complex(chat_id, branch)
+            update_user_stage(chat_id, "3.5_sent_subscription_prompt")
+        else:
+            bot.answer_callback_query(call.id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
+    except Exception as e:
+        print(f"Ошибка проверки подписки: {e}")
+        bot.answer_callback_query(call.id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("sub_branch_"))
 def subscription_stage(call):
     branch = call.data.split('sub_branch_')[1]
@@ -404,42 +420,42 @@ def subscription_stage(call):
         )
     # Обновляем этап
     update_user_stage(call.message.chat.id, "6_sent_subscription_prompt")
-    threading.Timer(86400, check_if_subed, args=[call, branch]).start()
+    threading.Timer(86400, check_if_subed, args=[call.message.chat.id, call.from_user.id, branch]).start()
 
-def check_if_subed(call, branch):
+def check_if_subed(chat_id, user_id, branch):
     try:
-        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.from_user.id)
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=user_id)
         if not chat_member.status in ['member', 'administrator', 'creator']:
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("Разбери меня", url="https://t.me/+p6N8QLUi2fo3YTc6"))
-            bot.send_message(call.message.chat.id, "Ты подписалась? В канале лично разбираю конкретные запросы каждой БЕСПЛАТНО ☺️", reply_markup=markup)
+            bot.send_message(chat_id, "Ты подписалась? В канале лично разбираю конкретные запросы каждой БЕСПЛАТНО ☺️", reply_markup=markup)
             # Обновляем этап
-            update_user_stage(call.message.chat.id, "7_sent_subscription_reminder")
-            threading.Timer(86400, second_complex, args=[call, branch]).start()
+            update_user_stage(chat_id, "7_sent_subscription_reminder")
+            threading.Timer(86400, second_complex, args=[chat_id, branch]).start()
     except Exception as e:
         print(f"Ошибка в check_if_subed (вероятно, пользователь заблокировал бота): {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("check_subscription_"))
 def check_subscription_callback(call):
     branch = call.data.split('check_subscription_')[1]
+    chat_id = call.message.chat.id
     try:
         chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.from_user.id)
         if chat_member.status in ['member', 'administrator', 'creator']:
             bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
             # Обновляем этап
-            update_user_stage(call.message.chat.id, "8a_subscription_confirmed")
-            second_complex(call, branch)
+            update_user_stage(chat_id, "8a_subscription_confirmed")
+            second_complex(chat_id, branch)
         else:
             bot.answer_callback_query(call.id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
             # Обновляем этап
-            update_user_stage(call.message.chat.id, "8b_subscription_failed")
+            update_user_stage(chat_id, "8b_subscription_failed")
     except Exception as e:
         print(f"Ошибка проверки подписки: {e}")
         bot.answer_callback_query(call.id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
 
 
-def second_complex(call, branch):
-    chat_id = call.message.chat.id
+def second_complex(chat_id, branch):
     if branch == "back":
         photo_path = 'media/second_complex_back.jpg'
         text = f"""<b>{bot.get_chat(chat_id).first_name}, кажется мы не закончили….</b>
