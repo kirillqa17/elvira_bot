@@ -241,23 +241,72 @@ def second_stage(call):
         bot.send_photo(
             chat_id=call.message.chat.id,
             photo=photo,
-            caption="""<b>Давай сделаю тебе приятно 😏</b>
+            caption="""<b>Давай сделаю тебе приятно</b> 😏
 
 Да-да, тебе не показалось))
 
-Хочу поделиться с тобой пользой и показать, как выглядеть моложе на 10-13 лет без косметологов и хирургов, потратив в день 10-15 минут 🚀
+Хочу поделиться с тобой пользой и показать, как избавиться от отеков навсегда, похудеть и даже помолодеть на 10-13 лет без косметологов и хирургов, потратив в день 10-15 минут 🚀
 
-Для начала давай познакомимся! Меня зовут Эльвира Андриянова, и я эксперт по естественному омоложению, фейсфитнесу, похудению и тренер по осанке с 24х летним опытом!\n
+Для начала давай познакомимся! Меня зовут Эльвира Андриянова, и я эксперт по естественному омоложению, фейсфитнесу, похудению и тренер по осанке с 24х летним опытом!
+
 <i>Мой путь начался с диагноза «порок сердца», операции, непонимания, как вернуть свое тело, здоровье, красоту 😅А сейчас мне 43 года, а выгляжу на 30; я полна сил и энергии; 2 года назад вышла замуж; не болею уже лет 10 и чувствую себя просто великолепно.</i>
 
-А еще я знаю секретные способы, как в 40+ выглядеть на 10-13 лет моложе, быть сексуальной, энергичной и с невероятной ЖЕНСКОЙ ЭНЕРГИЕЙ 😍
+А еще я знаю секретные способы, как забыть про отеки НАВСЕГДА, избавиться от лишнего веса, и даже в 40+ выглядеть на 10-13 лет моложе, быть сексуальной, энергичной и с невероятной ЖЕНСКОЙ ЭНЕРГИЕЙ 😍
 
 <b>Так вот, к чему я?
-А к тому, что я знаю все про молодое и здоровое тело! Поэтому в праве делиться этими знаниями с тобой ❤️</b>
+А к тому, что я знаю все про молодое и здоровое тело! Поэтому в праве делиться этими знаниями с тобой</b> ❤️
 """, parse_mode='HTML'
         )
     
     threading.Timer(30, free_complex, args=[call, branch]).start()
+
+def clean_check_sub(user_id, branch, timer = None):
+    try:
+        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=user_id)
+        if chat_member.status in ['member', 'administrator', 'creator']:
+            bot.answer_callback_query(user_id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
+            free_complex(user_id, branch)
+            update_user_stage(user_id, "3.5_sent_subscription_prompt")
+        else:
+            if get_user_stage(user_id).startswith("3_chose_branch_") and timer==10800:
+                free_complex(user_id, branch)
+            elif get_user_stage(user_id).startswith("3_chose_branch_") and timer==900:
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
+                markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(user_id, branch)))
+                username = get_username(user_id)
+                bot.send_message(user_id, f"{username}, не вижу твоей подписки, скорее подписывайся и смотри комплекс ❤️", reply_markup=markup)
+
+            bot.answer_callback_query(user_id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
+
+    except Exception as e:
+        print(f"Ошибка проверки подписки: {e}")
+        bot.answer_callback_query(user_id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
+
+
+
+def before_free_complex(call, branch):
+    text = """<b>Тук-тук, бежала к тебе со всех ног, чтобы сообщить, что тебя уже ждёт первый комплекс </b>
+
+Но, прежде, подпишись на мой канал, чтобы мы обменялись взаимной энергией с тобой 😉 
+
+<i>Сразу после подписки, тебе придет комплекс </i> 🫶🏻
+"""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
+    markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(call.message.chat.id, branch)))
+    photo_path='media/running.jpg'
+    with open(photo_path, 'rb') as photo:
+        bot.send_photo(
+            chat_id=call.message.chat.id,
+            photo=photo,
+            caption= text,
+            parse_mode='HTML',
+            reply_markup=markup
+        )
+    threading.Timer(900, clean_check_sub, args=[call, branch, 900]).start()
+    threading.Timer(10800, clean_check_sub, args=[call, branch, 10800]).start()
+
 
 def free_complex(call, branch):
     if branch == "back":
@@ -338,11 +387,14 @@ def after_free_complex(call, branch):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("sub_branch_"))
 def subscription_stage(call):
     branch = call.data.split('sub_branch_')[1]
-    text = """<b>Чтобы я могла дать тебе максимум пользы, подпишись на мой тг канал</b>, здесь ты узнаешь все секреты как выглядеть на 10-13 лет моложе без косметологов и хирургов, стабильно будешь получать БЕСПЛАТНЫЕ комплексы для тела и лица, а также еженедельные ответы на вопросы конкретно по твоей ситуации 😌
-https://t.me/elan_beauty 
+    text = """<b>А теперь секретное задание для тебя </b>😎
+Чтобы я могла дать тебе максимум пользы, подпишись на мой тг канал. 
+В нём ты узнаешь все секреты как выглядишь моложе на 10-13 лет, забудешь про отеки и лишние кг
+
+<b>А еще…стабильно будешь получать бесплатные комплексы для лица и тела, а также еженедельные ответы на вопросы конкретно по твоей ситуации</b>
 """
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/elan_beauty"))
+    markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
     markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=f"check_subscription_{branch}"))
     photo_path = "media/mem.jpg"
     with open(photo_path, 'rb') as photo:
@@ -359,10 +411,10 @@ https://t.me/elan_beauty
 
 def check_if_subed(call, branch):
     try:
-        chat_member = bot.get_chat_member(chat_id="@elan_beauty", user_id=call.from_user.id)
+        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=call.from_user.id)
         if not chat_member.status in ['member', 'administrator', 'creator']:
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("Разбери меня", url="https://t.me/elan_beauty"))
+            markup.add(types.InlineKeyboardButton("Разбери меня", url="https://t.me/+p6N8QLUi2fo3YTc6"))
             bot.send_message(call.message.chat.id, "Ты подписалась? В канале лично разбираю конкретные запросы каждой БЕСПЛАТНО ☺️", reply_markup=markup)
             # Обновляем этап
             update_user_stage(call.message.chat.id, "7_sent_subscription_reminder")
@@ -374,7 +426,7 @@ def check_if_subed(call, branch):
 def check_subscription_callback(call):
     branch = call.data.split('check_subscription_')[1]
     try:
-        chat_member = bot.get_chat_member(chat_id="@elan_beauty", user_id=call.from_user.id)
+        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=call.from_user.id)
         if chat_member.status in ['member', 'administrator', 'creator']:
             bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
             # Обновляем этап

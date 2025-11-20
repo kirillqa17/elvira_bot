@@ -79,6 +79,24 @@ def update_user_stage(telegram_id, stage):
     conn.commit()
     conn.close()
 
+def get_user_stage(telegram_id):
+    """Получает текущий этап пользователя в воронке."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT current_stage from users WHERE telegram_id = ?", (telegram_id))
+    cur_stage = cur.fetchall()
+    conn.close()
+    return cur_stage
+
+def get_username(telegram_id):
+    """Получает username пользователя в воронке."""
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("SELECT username from users WHERE telegram_id = ?", (telegram_id))
+    username = cur.fetchall()
+    conn.close()
+    return username
+
 def create_marker(name):
     marker = uuid.uuid4().hex[:8]
     conn = sqlite3.connect(DB_NAME)
