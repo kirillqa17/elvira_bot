@@ -260,28 +260,28 @@ def second_stage(call):
     
     threading.Timer(30, before_free_complex, args=[call, branch]).start()
 
-def clean_check_sub(user_id, branch, timer = None):
+def clean_check_sub(call, branch, timer = None):
     try:
-        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=user_id)
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.message.chat.id)
         if chat_member.status in ['member', 'administrator', 'creator']:
-            bot.answer_callback_query(user_id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
-            free_complex(user_id, branch)
-            update_user_stage(user_id, "3.5_sent_subscription_prompt")
+            bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
+            free_complex(call.message.chat.id, branch)
+            update_user_stage(call.message.chat.id, "3.5_sent_subscription_prompt")
         else:
-            if get_user_stage(user_id).startswith("3_chose_branch_") and timer==10800:
-                free_complex(user_id, branch)
-            elif get_user_stage(user_id).startswith("3_chose_branch_") and timer==900:
+            if get_user_stage(call.message.chat.id).startswith("3_chose_branch_") and timer==10800:
+                free_complex(call.message.chat.id, branch)
+            elif get_user_stage(call.message.chat.id).startswith("3_chose_branch_") and timer==900:
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton("Подписаться", url="https://t.me/+p6N8QLUi2fo3YTc6"))
-                markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(user_id, branch)))
-                username = get_username(user_id)
-                bot.send_message(user_id, f"{username}, не вижу твоей подписки, скорее подписывайся и смотри комплекс ❤️", reply_markup=markup)
+                markup.add(types.InlineKeyboardButton("Проверить подписку", callback_data=clean_check_sub(call.message.chat.id, branch)))
+                username = get_username(call.message.chat.id)
+                bot.send_message(call.message.chat.id, f"{username}, не вижу твоей подписки, скорее подписывайся и смотри комплекс ❤️", reply_markup=markup)
 
-            bot.answer_callback_query(user_id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ Кажется, ты еще не подписалась. Пожалуйста, подпишись и нажми снова", show_alert=True)
 
     except Exception as e:
         print(f"Ошибка проверки подписки: {e}")
-        bot.answer_callback_query(user_id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
+        bot.answer_callback_query(call.id, "Произошла ошибка при проверке. Попробуй еще раз позже", show_alert=True)
 
 
 
@@ -411,7 +411,7 @@ def subscription_stage(call):
 
 def check_if_subed(call, branch):
     try:
-        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=call.from_user.id)
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.from_user.id)
         if not chat_member.status in ['member', 'administrator', 'creator']:
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("Разбери меня", url="https://t.me/+p6N8QLUi2fo3YTc6"))
@@ -426,7 +426,7 @@ def check_if_subed(call, branch):
 def check_subscription_callback(call):
     branch = call.data.split('check_subscription_')[1]
     try:
-        chat_member = bot.get_chat_member(chat_id="-1002039278578", user_id=call.from_user.id)
+        chat_member = bot.get_chat_member(chat_id=-1002039278578, user_id=call.from_user.id)
         if chat_member.status in ['member', 'administrator', 'creator']:
             bot.answer_callback_query(call.id, "Спасибо за подписку! Сейчас подберу для тебя комплекс...")
             # Обновляем этап
